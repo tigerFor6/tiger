@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wisdge.cloud.calculate.dao.UserCustomerDao">
+    <select id="list" resultType="com.wisdge.cloud.calculate.dto.UserCustomerDTO">
+        SELECT uc.CUSTOMER_ID AS customer_Id,
+               uc.USER_ID     AS user_Id,
+               cus.CUSTID     AS cust_Id,
+               user.FULLNAME  AS fullname
+        FROM user_customer uc
+                 LEFT JOIN customer cus ON uc.CUSTOMER_ID = cus.id
+                 LEFT JOIN sys_user user on uc.USER_ID = user.ID
+        WHERE uc.STATUS = 1
+    </select>
+
+    <select id="list4CustomerId" resultType="com.wisdge.cloud.calculate.dto.UserCustomerDTO">
+        SELECT uc.CUSTOMER_ID AS customer_Id,
+               uc.USER_ID     AS user_Id,
+               su.FULLNAME     AS fullname,
+               cus.CUSTID     AS cust_Id
+        FROM user_customer uc
+                 INNER JOIN customer cus ON uc.CUSTOMER_ID = cus.id
+                 INNER JOIN SYS_USER su ON uc.USER_ID = su.id
+        WHERE uc.STATUS = 1
+          and uc.CUSTOMER_ID = #{customerId};
+    </select>
+
+    <select id="getSynCustids" resultType="java.lang.String">
+        SELECT custid from ods_custid
+    </select>
+
+    <select id="getUpPosCustomerIds" resultType="java.lang.String">
+        SELECT id from customer
+    </select>
+
+    <select id="getPeakAssets" resultType="hashMap">
+        SELECT TOTAL_ASSETS,HOLD_TIME from customer_position
+        where TOTAL_ASSETS = (select MAX(CAST(TOTAL_ASSETS AS DECIMAL(16,2))) from customer_position where CUSTOMER_ID = #{customerId})
+          and CUSTOMER_ID = #{customerId}
+    </select>
+
+    <select id="getDirectPeakAssets" resultType="hashMap">
+        SELECT DIRECT_TOTAL_ASSETS,HOLD_TIME from customer_position
+        where DIRECT_TOTAL_ASSETS = (select MAX(CAST(DIRECT_TOTAL_ASSETS AS DECIMAL(16,2)))  from customer_position where CUSTOMER_ID = #{customerId})
+          and CUSTOMER_ID = #{customerId}
+    </select>
+
+    <insert id="addHdHoldArcs" parameterType="list">
+        insert into hd_hold_arc(ta_code,acct_id,fund_code,agency_code,hold_share,frozen_share,confirm_date)
+        values
+        <foreach item="item" collection="mapList" separator=",">
+            (#{item.ta_code},#{item.acct_id},#{item.fund_code},#{item.agency_code},#{item.hold_share},#{item.frozen_share},#{item.confirm_date})
+        </foreach>
+    </insert>
+
+    <insert id="addCustomerPositions" parameterType="list">
+        insert into customer_position(ID,CUSTOMER_ID,TOTAL_ASSETS,HOLD_FUND,CREATE_TIME,HOLD_TIME)
+        values
+        <foreach item="item" collection="positions" separator=",">
+            (#{item.id},#{item.customerId},#{item.totalAssets},#{item.holdFund},#{item.createTime},#{item.holdTime})
+        </foreach>
+    </insert>
+
+    <select id="getCustIdRal" resultType="hashMap">
+        SELECT id,custid from customer where custid is not null
+    </select>
+
+    <select id="getCustomerLoseIds" resultType="java.lang.String">
+        SELECT DISTINCT
+        p.CUSTOMER_ID
+        FROM
+        customer_position p,
+        (
+        SELECT
+        cp.CUSTOMER_ID,
+        MAX(CAST(cp.TOTAL_ASSETS AS DECIMAL ( 16, 2 ))) maxAssets
+        FROM
+        customer_position cp
+        WHERE
+        cp.HOLD_TIME BETWEEN #{beginTime} AND #{endTime}
+        GROUP BY
+        cp.CUSTOMER_ID
+        ) r
+        WHERE
+        p.CUSTOMER_ID = r.CUSTOMER_ID
+        AND p.HOLD_TIME = #{endTime}
+        AND p.TOTAL_ASSETS &lt; r.maxAssets / 2
+    </select>
+</mapper>

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wisdge.cloud.calculate.dao.OdsCustomerBaseDao">
+
+    <select id="getOdsCustomer" resultType="hashMap">
+        select CUSTID,CCUSTFNAME,CUSTTYPE,CUSTPAPERTYPE,CUSTPAPERNO,CUSTADDRESS,CUSTEMAIL,CUSTPOST,CUSTMOBILE,CUSTPHONE,CUSTBIRTHDAY,CUSTSEX FROM ODS_CUSTOMER where CUSTID in
+        <foreach collection="custIds" item="custId" open="(" close=")" separator=",">
+            #{custId}
+        </foreach>
+    </select>
+
+    <select id="getFundAccountId" resultType="java.lang.String">
+        SELECT fundaccountid from ods_fundacct where custid = #{custId} and taid not in ('SZ','SH')
+    </select>
+
+    <select id="getSyFundAccountId" resultType="java.lang.String">
+        SELECT fundaccountid from ods_fundacct where custid = #{custId} AND taid in ('TA','ZD','S8')
+    </select>
+
+    <select id="getRiskLevel" resultType="hashMap">
+        select  f.CUSTID, risk.RISK_REARING_RANK,risk.EXPIRATION_TIME from b_ds_rc_customer_risk_rearing risk, B_DS_TA_ACCOUNT af, ODS_FUNDACCT f
+        where risk.TRADE_ACCOUNT_NO=af.TRADE_ACCOUNT_NO and af.TA_ACCOUNT_NO=f.FUNDACCOUNTID and f.CUSTID = #{custId} order by risk.EVALUATION_TIME desc
+    </select>
+
+    <select id="getTradeAccount" resultType="java.lang.String">
+        select distinct af.TRADE_ACCOUNT_NO from B_DS_TA_ACCOUNT af,ODS_FUNDACCT f
+        where af.TA_ACCOUNT_NO = f.FUNDACCOUNTID and f.taid not in ('SZ','SH') and f.CUSTID = #{custId}
+    </select>
+
+    <select id="getHoldFund" resultType="com.wisdge.cloud.calculate.vo.HoldFundInfoRes">
+        select FUNDCODE,DIVIDENDMETHOD,AGENCYCODE,nvl(HOLDSHARES,0) HOLDSHARES,nvl(MIDWAYVOLUME,0) MIDWAYVOLUME from B_TA_STATICSHARES
+        where HOLDSHARES > 0 and fundaccountid in
+            (select fundaccountid from ods_fundacct where taid not in ('SZ','SH') and custid = #{custId})
+    </select>
+
+    <select id="getRightsFund" resultType="com.wisdge.cloud.calculate.vo.HoldFundInfoRes">
+        select BTS.FUNDCODE,BTS.DIVIDENDMETHOD,BTS.AGENCYCODE,BTS.HOLDSHARES,BTS.MIDWAYVOLUME
+        from
+             B_TA_STATICSHARES BTS
+        where
+              BTS.HOLDSHARES > 0
+          and BTS.FUNDACCOUNTID in (select fundaccountid from ods_fundacct where taid not in ('SZ','SH') and custid = #{custId})
+          and BTS.FUNDCODE in (select WHF.FUNDCODE from WEB_HXJJ_FUNDINFO WHF where WHF.TID in ('1','2','8'))
+
+    </select>
+
+    <select id="getAgency" resultType="hashMap">
+        SELECT AGENCYCODE,AGENCYNAME from B_COD_AGENCY
+    </select>
+
+    <select id="getHoldShares" resultType="hashMap">
+        SELECT nvl(holdshares,0) holdshares,nvl(midwayvolume,0) midwayvolume from B_TA_STATICSHARES where fundcode = #{fundCode}
+    </select>
+
+    <select id="getDayFundNav" resultType="hashmap">
+        SELECT s.FUNDCODE,nvl(s.DAYFUNDNAV,1) DAYFUNDNAV,s.ACCUMULATIVENAV,s.WEEKPROFITRATIO,s.MYRIADDAYPROFIT,TO_CHAR(s.FUNDNAVDATE,'yyyy-MM-dd') FUNDNAVDATE from B_TA_FUNDSHOW s,
+                (SELECT FUNDCODE,max(FUNDNAVDATE) MAXFUNDCDATE from B_TA_FUNDSHOW GROUP BY FUNDCODE)vv
+        where s.FUNDCODE=vv.FUNDCODE and s.FUNDNAVDATE=vv.MAXFUNDCDATE
+    </select>
+
+    <select id="getFundNav" resultType="hashmap">
+        SELECT FUNDCODE,nvl(DAYFUNDNAV,1) DAYFUNDNAV,ACCUMULATIVENAV,WEEKPROFITRATIO,MYRIADDAYPROFIT,TO_CHAR(FUNDNAVDATE,'yyyy-MM-dd') FUNDNAVDATE from B_TA_FUNDSHOW where FUNDCODE is not null
+    </select>
+
+    <select id="getNotWorkFundNav" resultType="hashmap">
+        SELECT DISTINCT FUNDCODE, FUNDNAVDATE, DAYFUNDNAV
+        FROM (SELECT FUNDCODE,
+        FUNDNAVDATE,
+        DAYFUNDNAV,
+        row_number() over(PARTITION BY FUNDCODE ORDER BY FUNDNAVDATE DESC) RN
+        FROM b_ta_fundshow
+        WHERE FUNDNAVDATE &lt; TO_DATE(#{fundNavDate},'yyyy-mm-dd'))
+        WHERE RN = 1 and fundcode=#{fundCode}
+    </select>
+
+    <select id="getWeekProfitRatio" resultType="hashmap">
+        SELECT FUNDNAVDATE time,WEEKPROFITRATIO tem from B_TA_FUNDSHOW
+        where FUNDCODE = #{fundCode} and FUNDNAVDATE &gt; TO_DATE(#{beginDate}, 'yyyy-MM-dd')
+          and CONFIRMDATE &lt; TO_DATE(#{endDate}, 'yyyy-MM-dd') order by FUNDNAVDATE desc
+    </select>
+
+    <select id="getFundInfo" resultType="com.wisdge.cloud.calculate.vo.FundInfoRes">
+        select f.fundcode,f.fundname,f.currencytypeid,w.fundtype from b_ta_fund f
+            left join web_hxjj_fundinfo w on f.FUNDCODE=w.FUNDCODE
+        <where>
+            <if test='fundCode != null'>
+                AND f.fundcode = #{fundCode}
+            </if>
+        </where>
+    </select>
+
+    <select id="getErvalue" resultType="java.lang.String">
+        select ERVALUE from B_DC_EXCHANGE_RATE r,(SELECT max(ERDATE) MAXERDATE from B_DC_EXCHANGE_RATE) v
+        where r.ERDATE = v.MAXERDATE
+    </select>
+
+    <select id="getAllErvalue" resultType="hashMap">
+        select TO_CHAR(ERDATE,'yyyy-MM-dd') ERDATE,ERVALUE from B_DC_EXCHANGE_RATE where ERDATE is not null
+    </select>
+
+    <select id="getNotWorkErValue" resultType="hashMap">
+        SELECT  ERVALUE, ERDATE
+        FROM B_DC_EXCHANGE_RATE
+        WHERE  ERDATE &lt; TO_DATE(#{erDate},'yyyy-mm-dd') order by ERDATE desc
+    </select>
+
+    <select id="getTraInfo" resultType="hashMap">
+        select max(CONFIRMDATE) latesttradingtime,count(1) lastyeartradingnum,sum(CONFIRMAMOUNT) lastyeartradingmoney from b_ta_affirm_base
+        where FUNDACCOUNTID in ((select fundaccountid
+        from ods_fundacct
+        where taid not in ('SZ','SH') and custid = #{custId}))
+          and BUSINESSCODE not in ('027','028','031','032','042','044','045','070','072','298')
+          and CONFIRMDATE &gt; TO_DATE(#{beginTime}, 'yyyy-MM-dd')
+          and CONFIRMDATE &lt; sysdate
+    </select>
+
+
+    <select id="getDirectTraInfo" resultType="hashMap">
+        select max(CONFIRMDATE) directLatesttradingtime,count(1) directLastyeartradingnum,sum(CONFIRMAMOUNT) directLastyeartradingmoney from b_ta_affirm_base
+        where FUNDACCOUNTID in ((select fundaccountid
+                                 from ods_fundacct
+                                 where taid not in ('SZ','SH') and custid = #{custId}
+                                 ))
+          and AGENCYCODE = '203'
+          and BUSINESSCODE not in ('027','028','031','032','042','044','045','070','072','298')
+          and CONFIRMDATE &gt; TO_DATE(#{beginTime}, 'yyyy-MM-dd')
+          and CONFIRMDATE &lt; sysdate
+    </select>
+    <select id="getTradeRequestInfo" resultType="hashMap">
+        select R.PAYMENT_CHANNEL_ID,R.BUSINESS_TIME,C.NAME
+        from B_DS_TR_TRADE_REQUEST R,B_DS_AC_PAYMENT_CHANNEL C
+        where R.trade_request_id = #{tradeRequestId}
+          and R.PAYMENT_CHANNEL_ID = C.PAYMENT_CHANNEL_ID
+    </select>
+
+    <select id="getPlanInfo" resultType="hashMap">
+        select trade_plan_id,fund_name,amount,capital_channel_name,status,next_trade_date,actual_end_date,profit_rate
+        from b_ds_te_trade_plan where condition_type = 0 and TRADE_ACCOUNT_NO = #{tradeAccountNo} and amount is not null
+    </select>
+
+    <select id="getPlanInfoExp" resultType="hashMap">
+        select sum(CONFIRM_AMOUNT) totalplanmount,count(1) periods,to_char(min(business_time),'yyyy-MM-dd') start_time,to_char(max(business_time),'yyyy-MM-dd') end_time
+        from B_DS_TR_TRADE_REQUEST
+        where business_state='2090' and trade_plan_id = #{tradePlanId}
+    </select>
+
+    <select id="getAccountChangeInfo" resultType="hashMap">
+        select distinct ab.BUSINESSCODE,code.BUSINESSNAME,ab.CONFIRMVOLUME,ab.CONFIRMAMOUNT, to_char(ab.CONFIRMDATE,'yyyy-MM-dd') confirmdate from ODS_FUNDACCT f, B_TA_AFFIRM_BASE ab,B_COD_BUSINESS code
+        where f.CUSTID= #{custId}
+          and f.FUNDACCOUNTID=ab.FUNDACCOUNTID
+          and f.taid not in ('SZ','SH')
+          and ab.BUSINESSCODE=code.BUSINESSCODE
+          and ab.BUSINESSCODE in ('037','038')
+    </select>
+
+    <select id="getFundTypeCount" resultType="hashMap">
+        select distinct sc.CUSTID,code.BUSINESSCODE,w.fundtype from
+        B_TA_AFFIRM_BASE ab,ODS_FUNDACCT f,B_COD_BUSINESS code,web_hxjj_fundinfo w,scrm_custid sc
+        <where>
+            and ab.AGENCYCODE = '203'
+            and ab.confirmdate &gt;= TO_DATE(#{map.beginTime}, 'yyyy-MM-dd')
+            and ab.confirmdate &lt;= TO_DATE(#{map.endTime}, 'yyyy-MM-dd')
+            and ab.fundcode=w.FUNDCODE
+            and ab.BUSINESSCODE=code.BUSINESSCODE
+            and ab.FUNDACCOUNTID=f.FUNDACCOUNTID
+            and f.custid=sc.custid
+        </where>
+    </select>
+</mapper>

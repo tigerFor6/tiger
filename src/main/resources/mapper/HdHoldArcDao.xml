@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wisdge.cloud.calculate.dao.HdHoldArcDao">
+    <insert id="addHoldArcs">
+        insert into hd_hold_arc_new(ta_code,customer_id,acct_id,fund_code,agency_code,hold_share,frozen_share,confirm_date)
+        select  h.ta_code,f.customer_id,h.acct_id,h.fund_code,h.agency_code,h.hold_share,h.frozen_share,h.confirm_date from hd_hold_arc h,customer_fund_account f
+        where h.acct_id=f.fund_account and h.acct_id = #{fundAccount}
+    </insert>
+</mapper>

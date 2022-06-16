@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wisdge.cloud.calculate.dao.TradeInfoDao">
+    <insert id="addTradeInfos" parameterType="list">
+        insert into t_trade_info(trade_request_id,business_type,business_state,trade_account_no,ta_account_no,fund_code,target_fund_code,application_amount,application_volume,transfer_state,business_time)
+        values
+        <foreach item="item" collection="tradeList" separator=",">
+            (#{item.tradeRequestId},#{item.businessType},#{item.businessState},#{item.tradeAccountNo},#{item.taAccountNo},#{item.fundCode},#{item.targetFundCode},#{item.applicationAmount},#{item.applicationVolume},#{item.transferState},#{item.businessTime})
+        </foreach>
+    </insert>
+</mapper>

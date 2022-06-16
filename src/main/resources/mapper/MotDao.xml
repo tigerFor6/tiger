@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wisdge.cloud.calculate.dao.MotDao">
+    <select id="birthday" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT (
+                       '客户' || CCUSTFNAME || '将于' || TO_CHAR(SYSDATE, 'yyyy-') || TO_CHAR(cust.custbirthday, 'mm-dd') ||
+                       '生日，距离客户生日还有。' || TO_NUMBER(TO_CHAR(cust.custbirthday, 'dd') - TO_CHAR(SYSDATE, 'dd')) ||
+                       '天，敬请关注。'
+                   ) AS content,
+               '9'   AS TYPE
+        FROM ods_customer cust
+        WHERE cust.custid = #{ custId }
+          and (
+                to_char(cust.custbirthday, 'mmdd') = to_char(SYSDATE + 5, 'mmdd')
+                OR to_char(cust.custbirthday, 'mmdd') = to_char(SYSDATE, 'mmdd')
+            )
+    </select>
+
+    <select id="idCardExpired" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT ('客户' || c.CCUSTFNAME || '的身份证将于' || TO_CHAR(bdta.CERTIFICATE_VALID_TERM, 'yyyy-mm-dd') ||
+                '过期，请及时提醒客户。') AS content,
+               '10'            AS TYPE
+        FROM b_ds_trade_account bdta
+                 INNER JOIN b_ds_ta_account bdsta ON bdsta.trade_account_no = bdta.trade_account_no
+                 INNER JOIN ods_fundacct odsf ON bdsta.ta_account_no = odsf.FUNDACCOUNTID
+                 INNER JOIN ODS_CUSTOMER c ON odsf.custid = c.custid
+        WHERE c.custid = #{custId}
+          AND bdta.CERTIFICATE_VALID_EVER = '0'
+          AND bdta.CERTIFICATE_TYPE = '0'
+          AND (
+                    to_char(bdta.CERTIFICATE_VALID_TERM, 'yyyy-mm-dd') = to_char(SYSDATE, 'yyyy-mm-dd')
+                OR to_char(bdta.CERTIFICATE_VALID_TERM, 'yyyy-mm-dd') = to_char(SYSDATE + 10, 'yyyy-mm-dd')
+            )
+          AND ROWNUM &gt; 0
+          AND ROWNUM &lt;= 3
+    </select>
+
+    <select id="riskRuestionnaire" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT ('客户' || c.CCUSTFNAME || '的风险问卷将于' || to_char(odr.EXPIRATION_TIME, 'yyyy-mm-dd') ||
+                '过期，请及时提醒客户。') AS content,
+               '11'            AS TYPE
+        FROM ODS_CUSTOMER c
+                 INNER JOIN ods_fundacct odf ON c.CUSTID = odf.CUSTID
+                 INNER JOIN B_DS_TA_ACCOUNT bdta ON odf.FUNDACCOUNTID = bdta.ta_account_no
+                 INNER JOIN B_DS_RC_CUSTOMER_RISK_REARING odr ON odr.trade_account_no = bdta.trade_account_no
+                 INNER JOIN (
+            SELECT trade_account_no,
+                   max(EXPIRATION_TIME) AS EXPIRATION_TIME
+            FROM b_ds_rc_customer_risk_rearing
+            WHERE (
+                              to_char(EXPIRATION_TIME, 'yyyy-mm-dd') = to_char(SYSDATE, 'yyyy-mm-dd')
+                          OR to_char(EXPIRATION_TIME, 'yyyy-mm-dd') = to_char(SYSDATE + 10, 'yyyy-mm-dd')
+                      )
+            GROUP BY trade_account_no
+        ) t ON odr.trade_account_no = t.trade_account_no
+        where c.CUSTID = #{custId}
+        GROUP BY c.CUSTID,
+                 c.CCUSTFNAME,
+                 c.CUSTPAPERNO,
+                 odr.EXPIRATION_TIME
+    </select>
+
+    <select id="millionAssets" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT CONCAT('客户', c.CUSTOMER_NAME, '资产于', date_format(cp.hold_time, '%Y-%m-%d'), '首次超过百万，当前为',
+                      cp.TOTAL_ASSETS) AS content,
+               '2'                     AS TYPE
+        FROM customer_position cp
+                 INNER JOIN customer c ON cp.CUSTOMER_ID = c.ID
+        WHERE TOTAL_ASSETS > 1000000
+          AND cp.hold_time = (SELECT hold_time
+                              FROM customer_position
+                              WHERE CUSTOMER_ID = cp.CUSTOMER_ID
+                              ORDER BY hold_time DESC
+            LIMIT 1 )
+          AND c.CUSTID = #{custId}
+          AND cp.CUSTOMER_ID NOT IN (
+        SELECT customer_id
+        FROM customer_mot
+        WHERE type = '2' )
+        GROUP BY
+            cp.customer_id
+    </select>
+    <select id="customerChurnWarning" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT CONCAT('客户', t.CUSTOMER_NAME, '当前资产小于近一月高点的一半，敬请关注') AS content,
+               '5'                                                  AS TYPE
+        FROM (
+                 SELECT c.CUSTOMER_NAME      AS CUSTOMER_NAME,
+                        c.CUSTID             AS CUSTID,
+                        MAX(CAST(cp.TOTAL_ASSETS AS DECIMAL(16,2))) AS maxAssets,
+                        MIN(CAST(cp.TOTAL_ASSETS AS DECIMAL(16,2))) AS minAssets
+                 FROM customer_position cp
+                          INNER JOIN customer c ON cp.CUSTOMER_ID = c.ID
+                 WHERE cp.hold_time &lt;= NOW()
+                   AND cp.hold_time &gt;= DATE_SUB(NOW(), INTERVAL 30 DAY )
+             ) AS t
+        WHERE t.CUSTID = #{custId}
+          and t.maxAssets / minAssets > 2
+    </select>
+
+    <select id="positionWave" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT CONCAT('客户', t.customerName, '持有', IFNULL(t.holdFundname, ''), ',当前持有收益', t.profitRate,
+                      '敬请关注') AS content,
+               '6'            AS TYPE
+        FROM (
+                 SELECT c.CUSTOMER_NAME      AS customerName,
+                        c.custid             AS CUSTID,
+                        cp.profit_rate       AS profitRate,
+                        cp.hold_fund_name    as holdFundname,
+                        min(cp.total_assets) AS minAssets
+                 FROM customer_position cp
+                          INNER JOIN customer c ON cp.CUSTOMER_ID = c.ID
+                 WHERE cp.hold_time &lt;= NOW()
+                   AND cp.hold_time &gt;= DATE_SUB(NOW(), INTERVAL 30 DAY )
+             ) AS t
+        WHERE t.CUSTID = #{custId}
+          and t.minAssets &gt; 300000
+          AND profitRate &lt; 20
+    </select>
+
+    <select id="highPoint" resultType="com.wisdge.cloud.calculate.entity.CustomerMotEntity">
+        SELECT CONCAT('客户', t.customerName, '持有', IFNULL(t.holdFundname, ''), ',当前持有收益', t.profitRate,
+                      '敬请关注') AS content,
+               '7'            AS TYPE
+        FROM (
+                 SELECT c.CUSTOMER_NAME      AS customerName,
+                        c.CUSTID             AS CUSTID,
+                        cp.PROFIT_RATE       AS profitRate,
+                        cp.hold_fund_name    as holdFundname,
+                        MAX(CAST(cp.TOTAL_ASSETS AS DECIMAL(16,2))) AS maxAssets
+                 FROM customer_position cp
+                          INNER JOIN customer c ON cp.CUSTOMER_ID = c.ID
+                 WHERE cp.hold_time &lt;= NOW()
+                   AND cp.hold_time &gt;= DATE_SUB(NOW(), INTERVAL 30 DAY )
+             ) AS t
+        WHERE t.CUSTID = #{custId}
+          and t.maxAssets &gt; 100000
+          AND profitRate &gt; 20
+    </select>
+</mapper>
